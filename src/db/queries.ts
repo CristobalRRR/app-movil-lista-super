@@ -33,6 +33,12 @@ export async function getLists(): Promise<ListRow[]> {
   return db.getAllAsync<ListRow>('SELECT id, name FROM lists ORDER BY created_at ASC');
 }
 
+export async function getListById(listId: number): Promise<ListRow | null> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<ListRow>('SELECT id, name FROM lists WHERE id = ?', [listId]);
+  return row ?? null;
+}
+
 export async function createList(name: string): Promise<number> {
   const db = getDatabase();
   const result = await db.runAsync('INSERT INTO lists (name) VALUES (?)', [name]);
@@ -44,18 +50,12 @@ export async function renameList(listId: number, name: string): Promise<void> {
   await db.runAsync('UPDATE lists SET name = ? WHERE id = ?', [name, listId]);
 }
 
-export async function getListById(listId: number): Promise<ListRow | null> {
-  const db = getDatabase();
-  const row = await db.getFirstAsync<ListRow>('SELECT id, name FROM lists WHERE id = ?', [listId]);
-  return row ?? null;
-}
-
 export async function deleteList(listId: number): Promise<void> {
   const db = getDatabase();
   await db.runAsync('DELETE FROM lists WHERE id = ?', [listId]);
 }
 
-//Creando el arbol de ListDetailScreen
+//Arbol lista
 
 export async function getListTree(listId: number): Promise<CategoryNode[]> {
   const db = getDatabase();
@@ -64,18 +64,16 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
     category_id: number;
     category_name: string;
     category_color: string;
-    category_order: number;
     subcategory_id: number;
     subcategory_name: string;
-    subcategory_order: number;
     product_id: number;
     product_name: string;
     quantity: number;
     is_checked: number;
   }>(
     `SELECT
-       c.id as category_id, c.name as category_name, c.color as category_color, c.sort_order as category_order,
-       sc.id as subcategory_id, sc.name as subcategory_name, sc.sort_order as subcategory_order,
+       c.id as category_id, c.name as category_name, c.color as category_color,
+       sc.id as subcategory_id, sc.name as subcategory_name,
        p.id as product_id, p.name as product_name,
        li.quantity as quantity, li.is_checked as is_checked
      FROM list_items li
@@ -160,7 +158,6 @@ export async function toggleProductChecked(
   );
 }
 
-//El chequeo/deschequeo es en cascada
 export async function setSubcategoryChecked(
   listId: number,
   subcategoryId: number,
@@ -282,7 +279,6 @@ export async function getCatalogTree(listId?: number): Promise<CatalogCategory[]
   return Array.from(categoryMap.values());
 }
 
-//Identifica que listas contienen un producto, para hacer una alerta antes de eliminarlo
 export async function getListsContainingProduct(
   productId: number,
   excludeListId?: number
@@ -330,6 +326,7 @@ export async function updateListItemQuantity(
 
 export type CategoryOption = { id: number; name: string; color: string };
 export type SubcategoryOption = { id: number; name: string };
+export type DuplicateProduct = { id: number; name: string; categoryName: string; subcategoryName: string };
 
 export async function getCategoryOptions(): Promise<CategoryOption[]> {
   const db = getDatabase();
@@ -344,6 +341,20 @@ export async function getSubcategoryOptions(categoryId: number): Promise<Subcate
     'SELECT id, name FROM subcategories WHERE category_id = ? ORDER BY sort_order, name',
     [categoryId]
   );
+}
+
+export async function findProductByName(name: string): Promise<DuplicateProduct | null> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<DuplicateProduct>(
+    `SELECT p.id, p.name, c.name as categoryName, sc.name as subcategoryName
+     FROM products p
+     JOIN subcategories sc ON sc.id = p.subcategory_id
+     JOIN categories c ON c.id = sc.category_id
+     WHERE UPPER(TRIM(p.name)) = UPPER(TRIM(?))
+     LIMIT 1`,
+    [name]
+  );
+  return row ?? null;
 }
 
 export async function createCategory(name: string, color: string): Promise<number> {
@@ -372,24 +383,6 @@ export async function createSubcategory(categoryId: number, name: string): Promi
   return result.lastInsertRowId;
 }
 
-export type DuplicateProduct = { id: number; name: string; categoryName: string; subcategoryName: string };
-
-//Solo el nombre interno del producto se normaliza, el que se muestra es tal como
-//el usuario lo ingresa
-export async function findProductByName(name: string): Promise<DuplicateProduct | null> {
-  const db = getDatabase();
-  const row = await db.getFirstAsync<DuplicateProduct>(
-    `SELECT p.id, p.name, c.name as categoryName, sc.name as subcategoryName
-     FROM products p
-     JOIN subcategories sc ON sc.id = p.subcategory_id
-     JOIN categories c ON c.id = sc.category_id
-     WHERE UPPER(TRIM(p.name)) = UPPER(TRIM(?))
-     LIMIT 1`,
-    [name]
-  );
-  return row ?? null;
-}
-
 export async function createProduct(subcategoryId: number, name: string): Promise<number> {
   const db = getDatabase();
   const maxOrder = await db.getFirstAsync<{ m: number }>(
@@ -401,4 +394,84 @@ export async function createProduct(subcategoryId: number, name: string): Promis
     [subcategoryId, name, (maxOrder?.m ?? -1) + 1]
   );
   return result.lastInsertRowId;
+}
+
+//CRUD Catalogo: Renombrar
+
+export async function renameCategory(id: number, name: string, color: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE categories SET name = ?, color = ? WHERE id = ?', [name, color, id]);
+}
+
+export async function renameSubcategory(id: number, name: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE subcategories SET name = ? WHERE id = ?', [name, id]);
+}
+
+export async function renameProduct(id: number, name: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE products SET name = ? WHERE id = ?', [name, id]);
+}
+
+//CRUD Catalogo: Eliminar, con informacion de impacto de cascada
+
+export type CategoryImpact = { subcategoryCount: number; productCount: number; listNames: string[] };
+export type SubcategoryImpact = { productCount: number; listNames: string[] };
+
+export async function getCategoryImpact(categoryId: number): Promise<CategoryImpact> {
+  const db = getDatabase();
+  const subRow = await db.getFirstAsync<{ c: number }>(
+    'SELECT COUNT(*) as c FROM subcategories WHERE category_id = ?',
+    [categoryId]
+  );
+  const prodRow = await db.getFirstAsync<{ c: number }>(
+    `SELECT COUNT(*) as c FROM products p
+     JOIN subcategories sc ON sc.id = p.subcategory_id
+     WHERE sc.category_id = ?`,
+    [categoryId]
+  );
+  const lists = await db.getAllAsync<{ name: string }>(
+    `SELECT DISTINCT l.name FROM lists l
+     JOIN list_items li ON li.list_id = l.id
+     JOIN products p ON p.id = li.product_id
+     JOIN subcategories sc ON sc.id = p.subcategory_id
+     WHERE sc.category_id = ?`,
+    [categoryId]
+  );
+  return {
+    subcategoryCount: subRow?.c ?? 0,
+    productCount: prodRow?.c ?? 0,
+    listNames: lists.map((l) => l.name),
+  };
+}
+
+export async function getSubcategoryImpact(subcategoryId: number): Promise<SubcategoryImpact> {
+  const db = getDatabase();
+  const prodRow = await db.getFirstAsync<{ c: number }>(
+    'SELECT COUNT(*) as c FROM products WHERE subcategory_id = ?',
+    [subcategoryId]
+  );
+  const lists = await db.getAllAsync<{ name: string }>(
+    `SELECT DISTINCT l.name FROM lists l
+     JOIN list_items li ON li.list_id = l.id
+     JOIN products p ON p.id = li.product_id
+     WHERE p.subcategory_id = ?`,
+    [subcategoryId]
+  );
+  return { productCount: prodRow?.c ?? 0, listNames: lists.map((l) => l.name) };
+}
+
+export async function deleteCategory(id: number): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('DELETE FROM categories WHERE id = ?', [id]);
+}
+
+export async function deleteSubcategory(id: number): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('DELETE FROM subcategories WHERE id = ?', [id]);
+}
+
+export async function deleteProduct(id: number): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('DELETE FROM products WHERE id = ?', [id]);
 }

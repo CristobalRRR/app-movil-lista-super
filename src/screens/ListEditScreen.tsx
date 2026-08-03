@@ -2,84 +2,72 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getListTree, updateListItemQuantity, renameList, CategoryNode } from '../db/queries';
+import { getListTree, updateListItemQuantity, CategoryNode } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
-import PromptModal from '../components/PromptModal';
- 
+
 type Props = { route: any; navigation: any };
- 
+
 export default function ListEditScreen({ route, navigation }: Props) {
-  const { listId, listName: initialListName } = route.params;
-  const [listName, setListName] = useState(initialListName);
+  const { listId, listName } = route.params;
+  //tree copia la estructura de la DB para refrescarse cada vez que se vea la pantalla
   const [tree, setTree] = useState<CategoryNode[]>([]);
-  //DB solo se actualiza al usar boton guardar
+  //pendingQuantities hace un almacenamiento local que solo se manifestara
+  //cuando se presione Guardar, ningun otro boton lo hara. Cancelar lo anula.
   const [pendingQuantities, setPendingQuantities] = useState<Map<number, number>>(new Map());
-  const [renameModalVisible, setRenameModalVisible] = useState(false);
- 
-  const load = useCallback(() => {
-    getListTree(listId).then((data) => {
-      setTree(data);
-      setPendingQuantities(new Map());
-    });
-  }, [listId]);
- 
-  //ListEdit se utiliza en todas las vistas, para evitar quedar con una lista
-  //buggeada en caso de eliminarla y no se refleje el cambio
+
   useEffect(() => {
-    setListName(initialListName);
-  }, [listId, initialListName]);
- 
-  useFocusEffect(load);
- 
+    setPendingQuantities(new Map());
+  }, [listId]);
+
+  const loadStructure = useCallback(() => {
+    getListTree(listId).then(setTree);
+  }, [listId]);
+
+  useFocusEffect(loadStructure);
+
   function getQty(productId: number, dbQty: number): number {
     return pendingQuantities.has(productId) ? pendingQuantities.get(productId)! : dbQty;
   }
- 
+
   function changeQty(productId: number, delta: number, dbQty: number) {
     const current = getQty(productId, dbQty);
     const next = Math.max(1, current + delta);
-    setPendingQuantities(new Map(pendingQuantities).set(productId, next));
+    setPendingQuantities((prev) => new Map(prev).set(productId, next));
   }
- 
+
   async function handleGuardar() {
     for (const [productId, quantity] of pendingQuantities.entries()) {
       await updateListItemQuantity(listId, productId, quantity);
     }
     navigation.goBack();
   }
- 
+
   function handleCancelar() {
+    //Cancelar retrocede y anula cualquier posible cambio a la DB
     navigation.goBack();
   }
- 
-  async function handleRename(name: string) {
-    await renameList(listId, name);
-    setListName(name);
-    setRenameModalVisible(false);
-  }
- 
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancelar}>
           <Text style={styles.headerBtn}>Cancelar</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.titleArea} onPress={() => setRenameModalVisible(true)}>
-          <Text style={styles.pencil}>✎</Text>
-          <Text style={styles.headerTitle} numberOfLines={1}>{listName}</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {listName}
+        </Text>
         <TouchableOpacity onPress={handleGuardar}>
           <Text style={styles.headerBtn}>Guardar</Text>
         </TouchableOpacity>
       </View>
- 
+
       <TouchableOpacity
         style={styles.addProductBtn}
         onPress={() => navigation.navigate('AddProductToList', { listId, listName })}
       >
         <Text style={styles.addProductBtnText}>Añadir{'\n'}producto</Text>
       </TouchableOpacity>
- 
+
       <ScrollView>
         {tree.map((cat) => (
           <View key={cat.id}>
@@ -119,18 +107,10 @@ export default function ListEditScreen({ route, navigation }: Props) {
           <Text style={styles.emptyHint}>Sin productos aún. Toca "Añadir producto".</Text>
         )}
       </ScrollView>
- 
-      <PromptModal
-        visible={renameModalVisible}
-        title="Renombrar lista"
-        initialValue={listName}
-        onCancel={() => setRenameModalVisible(false)}
-        onConfirm={handleRename}
-      />
     </SafeAreaView>
   );
 }
- 
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1e1e1e' },
   header: {
@@ -142,9 +122,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   headerBtn: { fontWeight: 'bold', backgroundColor: '#fff6', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, overflow: 'hidden' },
-  titleArea: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center' },
-  pencil: { fontSize: 16 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
   addProductBtn: { backgroundColor: '#5AC8FA', margin: 14, padding: 20, borderRadius: 14, alignItems: 'center' },
   addProductBtnText: { fontWeight: 'bold', fontSize: 18, textAlign: 'center' },
   row: {

@@ -5,30 +5,33 @@ import { DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getLists, createList, renameList, deleteList, ListRow } from '../db/queries';
 import PromptModal from '../components/PromptModal';
- 
+
 export default function AppDrawerContent(props: DrawerContentComponentProps) {
   const [lists, setLists] = useState<ListRow[]>([]);
   const [menuOpenFor, setMenuOpenFor] = useState<number | null>(null);
   const [newListModalVisible, setNewListModalVisible] = useState(false);
   const [renameModalFor, setRenameModalFor] = useState<ListRow | null>(null);
   const isFocused = useIsFocused();
- 
+
   const reload = useCallback(() => {
     getLists().then(setLists);
   }, []);
- 
+
   //Refrescar cada vez que el drawer es visible
   React.useEffect(() => {
     if (isFocused) reload();
   }, [isFocused, reload]);
- 
+
   async function handleCreateList(name: string) {
     setNewListModalVisible(false);
     const id = await createList(name);
     reload();
-    props.navigation.navigate('ListDetail', { listId: id, listName: name });
+    props.navigation.navigate('ListStack', {
+      screen: 'ListDetail',
+      params: { listId: id, listName: name },
+    });
   }
- 
+
   async function handleRename(name: string) {
     if (renameModalFor) {
       await renameList(renameModalFor.id, name);
@@ -36,7 +39,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
       reload();
     }
   }
- 
+
   function confirmDelete(list: ListRow) {
     setMenuOpenFor(null);
     Alert.alert(
@@ -51,12 +54,15 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
             await deleteList(list.id);
             reload();
             const state = props.navigation.getState();
-            const listDetailRoute = state.routes.find((r: any) => r.name === 'ListDetail');
-            const currentParams = listDetailRoute?.params as { listId?: number } | undefined;
+            const stackRoute = state.routes.find((r: any) => r.name === 'ListStack');
+            const nestedListDetailRoute = stackRoute?.state?.routes?.find(
+              (r: any) => r.name === 'ListDetail'
+            );
+            const currentParams = nestedListDetailRoute?.params as { listId?: number } | undefined;
             if (currentParams?.listId === list.id) {
-              props.navigation.navigate('ListDetail', {
-                listId: undefined,
-                listName: undefined,
+              props.navigation.navigate('ListStack', {
+                screen: 'ListDetail',
+                params: { listId: undefined, listName: undefined },
               });
             }
             props.navigation.closeDrawer();
@@ -65,7 +71,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
       ]
     );
   }
- 
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.listasHeader}>
@@ -74,7 +80,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
           <Text style={styles.nuevaListaText}>Nueva lista</Text>
         </TouchableOpacity>
       </View>
- 
+
       <FlatList
         data={lists}
         keyExtractor={(item) => String(item.id)}
@@ -84,9 +90,9 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
               style={styles.listRowNameArea}
               onPress={() => {
                 setMenuOpenFor(null);
-                props.navigation.navigate('ListDetail', {
-                  listId: item.id,
-                  listName: item.name,
+                props.navigation.navigate('ListStack', {
+                  screen: 'ListDetail',
+                  params: { listId: item.id, listName: item.name },
                 });
                 props.navigation.closeDrawer();
               }}
@@ -120,7 +126,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
           <Text style={styles.emptyHint}>No hay listas aún. Toca "Nueva lista".</Text>
         }
       />
- 
+
       <View style={styles.staticRoutes}>
         <TouchableOpacity style={styles.staticRow} onPress={() => props.navigation.navigate('Catalogo')}>
           <Text style={styles.staticRowText}>Catálogo</Text>
@@ -132,7 +138,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
           <Text style={styles.staticRowText}>Información</Text>
         </TouchableOpacity>
       </View>
- 
+
       <PromptModal
         visible={newListModalVisible}
         title="Nueva lista"
@@ -151,7 +157,7 @@ export default function AppDrawerContent(props: DrawerContentComponentProps) {
     </SafeAreaView>
   );
 }
- 
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#6B72B0' },
   listasHeader: {

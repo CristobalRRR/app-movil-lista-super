@@ -1,6 +1,5 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   getCatalogTree,
@@ -10,34 +9,46 @@ import {
 } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
 import AddProductModal from '../components/AddProductModal';
- 
+
 type Props = { route: any; navigation: any };
- 
+
 export default function AddProductToListScreen({ route, navigation }: Props) {
   const { listId, listName } = route.params;
   const [tree, setTree] = useState<CatalogCategory[]>([]);
-  //Se guarda un snapshot de la lista antes de editarla, para no quitar por accidente
-  //algun producto que haya estado antes
-  const [originalInList, setOriginalInList] = useState<Set<number>>(new Set());
+  //Snapshot de lo que estaba en la lista segun la DB cuando se entra a la pantalla
+  const [committedInList, setCommittedInList] = useState<Set<number>>(new Set());
+  //DB solo se toca cuando se apreta Guardar
+  const [overrides, setOverrides] = useState<Map<number, boolean>>(new Map());
   const [addModalVisible, setAddModalVisible] = useState(false);
- 
-  const load = useCallback(() => {
+
+  const freshEntry = useCallback(() => {
     getCatalogTree(listId).then((data) => {
       setTree(data);
-      const inListIds = new Set<number>();
-      data.forEach((c) => c.subcategories.forEach((s) => s.products.forEach((p) => {
-        if (p.in_list) inListIds.add(p.id);
-      })));
-      setOriginalInList(inListIds);
+      const committed = new Set<number>();
+      data.forEach((c) =>
+        c.subcategories.forEach((s) =>
+          s.products.forEach((p) => {
+            if (p.in_list) committed.add(p.id);
+          })
+        )
+      );
+      setCommittedInList(committed);
+      setOverrides(new Map());
     });
   }, [listId]);
- 
-  useFocusEffect(load);
- 
-  async function handleToggle(productId: number, currentlyInList: boolean) {
-    if (currentlyInList) {
-      const wasOriginallyInList = originalInList.has(productId);
-      if (wasOriginallyInList) {
+
+  useEffect(() => {
+    freshEntry();
+  }, [freshEntry]);
+
+  function effectiveInList(productId: number, dbInList: boolean): boolean {
+    return overrides.has(productId) ? overrides.get(productId)! : dbInList;
+  }
+
+  function handleToggle(productId: number, dbInList: boolean) {
+    const current = effectiveInList(productId, dbInList);
+    if (current) {
+      if (committedInList.has(productId)) {
         const productName = findProductName(tree, productId);
         Alert.alert(
           'Quitar producto',
@@ -47,42 +58,53 @@ export default function AddProductToListScreen({ route, navigation }: Props) {
             {
               text: 'Continuar',
               style: 'destructive',
-              onPress: async () => {
-                await removeProductFromList(listId, productId);
-                load();
-              },
+              onPress: () => setOverrides((prev) => new Map(prev).set(productId, false)),
             },
           ]
         );
         return;
       }
-      //Si no estaba en la lista no necesita confirmacion
-      await removeProductFromList(listId, productId);
-      load();
+      setOverrides((prev) => new Map(prev).set(productId, false));
     } else {
-      await addProductToList(listId, productId);
-      load();
+      setOverrides((prev) => new Map(prev).set(productId, true));
     }
   }
- 
+
+  async function handleGuardar() {
+    for (const [productId, desired] of overrides.entries()) {
+      const wasCommitted = committedInList.has(productId);
+      if (desired && !wasCommitted) {
+        await addProductToList(listId, productId);
+      } else if (!desired && wasCommitted) {
+        await removeProductFromList(listId, productId);
+      }
+    }
+    navigation.goBack();
+  }
+
+  function handleCancelar() {
+    //Cancelar no toca la DB y retrocede
+    navigation.goBack();
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={handleCancelar}>
           <Text style={styles.headerBtn}>Cancelar</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={2}>
           Añadir producto a{'\n'}{listName}
         </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={handleGuardar}>
           <Text style={styles.headerBtn}>Guardar</Text>
         </TouchableOpacity>
       </View>
- 
+
       <TouchableOpacity style={styles.addToCatalogBtn} onPress={() => setAddModalVisible(true)}>
         <Text style={styles.addToCatalogBtnText}>Añadir producto a catálogo</Text>
       </TouchableOpacity>
- 
+
       <ScrollView>
         {tree.map((cat) => (
           <View key={cat.id}>
@@ -94,35 +116,39 @@ export default function AddProductToListScreen({ route, navigation }: Props) {
                 <View style={[styles.row, { backgroundColor: lighten(cat.color, SUBCATEGORY_TINT) }]}>
                   <Text style={styles.rowText}>{sub.name}</Text>
                 </View>
-                {sub.products.map((prod) => (
-                  <TouchableOpacity
-                    key={prod.id}
-                    style={[styles.row, { backgroundColor: lighten(cat.color, PRODUCT_TINT) }]}
-                    onPress={() => handleToggle(prod.id, prod.in_list)}
-                  >
-                    <Text style={styles.rowText}>{prod.name}</Text>
-                    <Text style={styles.checkbox}>{prod.in_list ? '☑' : '☐'}</Text>
-                  </TouchableOpacity>
-                ))}
+                {sub.products.map((prod) => {
+                  const checked = effectiveInList(prod.id, prod.in_list);
+                  return (
+                    <TouchableOpacity
+                      key={prod.id}
+                      style={[styles.row, { backgroundColor: lighten(cat.color, PRODUCT_TINT) }]}
+                      onPress={() => handleToggle(prod.id, prod.in_list)}
+                    >
+                      <Text style={styles.rowText}>{prod.name}</Text>
+                      <Text style={styles.checkbox}>{checked ? '☑' : '☐'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             ))}
           </View>
         ))}
       </ScrollView>
- 
+
       <AddProductModal
         visible={addModalVisible}
         onCancel={() => setAddModalVisible(false)}
         onCreated={async (productId) => {
           setAddModalVisible(false);
-          await addProductToList(listId, productId);
-          load();
+          const data = await getCatalogTree(listId);
+          setTree(data);
+          setOverrides((prev) => new Map(prev).set(productId, true));
         }}
       />
     </SafeAreaView>
   );
 }
- 
+
 function findProductName(tree: CatalogCategory[], productId: number): string {
   for (const c of tree) {
     for (const s of c.subcategories) {
@@ -132,7 +158,7 @@ function findProductName(tree: CatalogCategory[], productId: number): string {
   }
   return 'este producto';
 }
- 
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1e1e1e' },
   header: {

@@ -1,13 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-} from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
+import { useFocusEffect, DrawerActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   getListTree,
@@ -20,18 +13,18 @@ import {
   CategoryNode,
 } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
- 
+
 type Props = {
   route: { params?: { listId?: number; listName?: string } };
   navigation: any;
 };
- 
+
 export default function ListDetailScreen({ route, navigation }: Props) {
   const listId = route.params?.listId;
   const listName = route.params?.listName ?? 'Lista';
   const [tree, setTree] = useState<CategoryNode[]>([]);
   const [loading, setLoading] = useState(true);
- 
+
   const reload = useCallback(() => {
     if (!listId) {
       setTree([]);
@@ -52,16 +45,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         .finally(() => setLoading(false));
     });
   }, [listId, navigation]);
- 
+
   useFocusEffect(reload);
- 
+
   const isEmpty = tree.length === 0;
- 
+
   async function handleToggleProduct(productId: number, current: boolean) {
     await toggleProductChecked(listId!, productId, !current);
     reload();
   }
- 
+
   function confirmAndToggleSubcategory(sub: { id: number; name: string; is_checked: boolean }) {
     Alert.alert(
       `¿Marcar/desmarcar "${sub.name}"?`,
@@ -78,7 +71,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       ]
     );
   }
- 
+
   function confirmAndToggleCategory(cat: { id: number; name: string; is_checked: boolean }) {
     Alert.alert(
       `¿Marcar/desmarcar "${cat.name}"?`,
@@ -95,21 +88,21 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       ]
     );
   }
- 
+
   async function toggleCategoryCollapsed(cat: CategoryNode) {
     await setCategoryCollapsed(listId!, cat.id, !cat.is_collapsed);
     reload();
   }
- 
+
   async function toggleSubcategoryCollapsed(subId: number, collapsed: boolean) {
     await setSubcategoryCollapsed(listId!, subId, !collapsed);
     reload();
   }
- 
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.openDrawer()}>
+        <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
           <Text style={styles.headerIcon}>☰</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
@@ -124,7 +117,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
- 
+
       {!listId ? (
         <View style={styles.center}>
           <Text style={styles.emptyText}>
@@ -154,7 +147,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 </View>
               </View>
- 
+
               {!cat.is_collapsed &&
                 cat.subcategories.map((sub) => (
                   <View key={sub.id}>
@@ -176,7 +169,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                         </TouchableOpacity>
                       </View>
                     </View>
- 
+
                     {!sub.is_collapsed &&
                       sub.products.map((prod) => (
                         <View
@@ -208,7 +201,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     </SafeAreaView>
   );
 }
- 
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1e1e1e' },
   header: {

@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
- 
 export default function OpcionesScreen() {
   return (
     <View style={styles.container}>
@@ -8,7 +7,6 @@ export default function OpcionesScreen() {
     </View>
   );
 }
- 
 const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e1e1e' },
   text: { color: '#fff', fontSize: 18 },

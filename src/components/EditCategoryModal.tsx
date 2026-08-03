@@ -1,44 +1,55 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { CATEGORY_COLOR_PALETTE } from '../utils/color';
 
 type Props = {
   visible: boolean;
-  title: string;
-  initialValue?: string;
-  placeholder?: string;
-  confirmLabel?: string;
+  initialName: string;
+  initialColor: string;
   onCancel: () => void;
-  onConfirm: (value: string) => void;
+  onConfirm: (name: string, color: string) => void;
 };
 
-export default function PromptModal({
+export default function EditCategoryModal({
   visible,
-  title,
-  initialValue = '',
-  placeholder,
-  confirmLabel = 'Guardar',
+  initialName,
+  initialColor,
   onCancel,
   onConfirm,
 }: Props) {
-  const [value, setValue] = useState(initialValue);
+  const [name, setName] = useState(initialName);
+  const [color, setColor] = useState(initialColor);
 
   useEffect(() => {
-    if (visible) setValue(initialValue);
-  }, [visible, initialValue]);
+    if (visible) {
+      setName(initialName);
+      setColor(initialColor);
+    }
+  }, [visible, initialName, initialColor]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="fade">
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.title}>Editar categoría</Text>
           <TextInput
             style={styles.input}
-            value={value}
-            onChangeText={setValue}
-            placeholder={placeholder}
+            value={name}
+            onChangeText={setName}
+            placeholder="Nombre"
             placeholderTextColor="#888"
             autoFocus
           />
+          <Text style={styles.label}>Color</Text>
+          <View style={styles.palette}>
+            {CATEGORY_COLOR_PALETTE.map((c) => (
+              <TouchableOpacity
+                key={c}
+                onPress={() => setColor(c)}
+                style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchSelected]}
+              />
+            ))}
+          </View>
           <View style={styles.row}>
             <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={onCancel}>
               <Text style={styles.btnText}>Cancelar</Text>
@@ -46,10 +57,10 @@ export default function PromptModal({
             <TouchableOpacity
               style={[styles.btn, styles.confirmBtn]}
               onPress={() => {
-                if (value.trim()) onConfirm(value.trim());
+                if (name.trim()) onConfirm(name.trim(), color);
               }}
             >
-              <Text style={styles.btnText}>{confirmLabel}</Text>
+              <Text style={styles.btnText}>Guardar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -68,9 +79,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontSize: 16,
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  row: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  label: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  palette: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 },
+  swatch: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: 'transparent' },
+  swatchSelected: { borderColor: '#fff' },
+  row: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 8 },
   btn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 6 },
   cancelBtn: { backgroundColor: '#B5524A' },
   confirmBtn: { backgroundColor: '#4CD137' },

@@ -6,12 +6,12 @@ function hexToRgb(hex: string): [number, number, number] {
   const bigint = parseInt(clean, 16);
   return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
 }
- 
+
 function rgbToHex(r: number, g: number, b: number): string {
   const toHex = (n: number) => Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
- 
+
 //amount: 0 = sin cambio, 1 = blanco
 //Para darle el efecto de fading
 export function lighten(hex: string, amount: number): string {
@@ -22,10 +22,10 @@ export function lighten(hex: string, amount: number): string {
     b + (255 - b) * amount
   );
 }
- 
+
 export const SUBCATEGORY_TINT = 0.35;
 export const PRODUCT_TINT = 0.6;
- 
+
 //Paleta de 24 colores preseleccionados, para ahorrar un selector completo.
 //Los colores deberian ser aptos para daltonicos
 export const CATEGORY_COLOR_PALETTE: string[] = [
