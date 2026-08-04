@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, DrawerActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import {
   getListTree,
   getListById,
@@ -20,6 +21,7 @@ type Props = {
 };
 
 export default function ListDetailScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
   const listId = route.params?.listId;
   const listName = route.params?.listName ?? 'Lista';
   const [tree, setTree] = useState<CategoryNode[]>([]);
@@ -34,7 +36,6 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     setLoading(true);
     getListById(listId).then((list) => {
       if (!list) {
-        //Devuelve a la pantalla sin listas en caso de eliminar todas
         navigation.setParams({ listId: undefined, listName: undefined });
         setTree([]);
         setLoading(false);
@@ -100,7 +101,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
           <Text style={styles.headerIcon}>☰</Text>
@@ -120,17 +121,17 @@ export default function ListDetailScreen({ route, navigation }: Props) {
 
       {!listId ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>
+          <Text style={[styles.emptyText, { color: colors.text }]}>
             Selecciona una lista desde el menú, o crea una nueva.
           </Text>
         </View>
       ) : loading ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>Cargando...</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>Cargando...</Text>
         </View>
       ) : isEmpty ? (
         <View style={styles.center}>
-          <Text style={styles.emptyText}>Presiona editar para añadir productos</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>Presiona editar para añadir productos</Text>
         </View>
       ) : (
         <ScrollView>

@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, DrawerActions } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import {
   getCatalogTree,
   renameCategory,
@@ -29,6 +30,7 @@ type EditTarget =
   | null;
 
 export default function CatalogoScreen({ navigation }: Props) {
+  const { colors } = useTheme();
   const [tree, setTree] = useState<CatalogCategory[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [collapsedCats, setCollapsedCats] = useState<Set<number>>(new Set());
@@ -108,7 +110,7 @@ export default function CatalogoScreen({ navigation }: Props) {
     ]);
   }
 
-  //Eliminar, con advertencias de cascada
+  //Eliminar, con advertencia de cascada
 
   async function handleDeleteCategory(id: number, name: string) {
     const impact = await getCategoryImpact(id);
@@ -171,7 +173,7 @@ export default function CatalogoScreen({ navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.dispatch(DrawerActions.openDrawer())}>
           <Text style={styles.headerIcon}>☰</Text>
@@ -274,7 +276,7 @@ export default function CatalogoScreen({ navigation }: Props) {
           );
         })}
         {tree.length === 0 && (
-          <Text style={styles.emptyHint}>El catálogo está vacío.</Text>
+          <Text style={[styles.emptyHint, { color: colors.text }]}>El catálogo está vacío.</Text>
         )}
       </ScrollView>
 

@@ -5,17 +5,18 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initDatabase } from './src/db/database';
- 
+import { ThemeProvider } from './src/theme/ThemeContext';
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
- 
+
   useEffect(() => {
     initDatabase()
       .then(() => setReady(true))
       .catch((e) => setError(String(e)));
   }, []);
- 
+
   if (error) {
     return (
       <View style={styles.center}>
@@ -24,7 +25,7 @@ export default function App() {
       </View>
     );
   }
- 
+
   if (!ready) {
     return (
       <View style={styles.center}>
@@ -32,16 +33,18 @@ export default function App() {
       </View>
     );
   }
- 
+
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
+      <ThemeProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
- 
+
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e1e1e' },
   errorText: { color: 'red', textAlign: 'center', paddingHorizontal: 16 },

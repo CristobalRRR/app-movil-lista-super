@@ -55,7 +55,7 @@ export async function deleteList(listId: number): Promise<void> {
   await db.runAsync('DELETE FROM lists WHERE id = ?', [listId]);
 }
 
-//Arbol lista
+//Arbol de listas
 
 export async function getListTree(listId: number): Promise<CategoryNode[]> {
   const db = getDatabase();
@@ -413,7 +413,7 @@ export async function renameProduct(id: number, name: string): Promise<void> {
   await db.runAsync('UPDATE products SET name = ? WHERE id = ?', [name, id]);
 }
 
-//CRUD Catalogo: Eliminar, con informacion de impacto de cascada
+//CRUD Catalogo: Eliminar, con informacion del impacto de cascada
 
 export type CategoryImpact = { subcategoryCount: number; productCount: number; listNames: string[] };
 export type SubcategoryImpact = { productCount: number; listNames: string[] };
@@ -474,4 +474,118 @@ export async function deleteSubcategory(id: number): Promise<void> {
 export async function deleteProduct(id: number): Promise<void> {
   const db = getDatabase();
   await db.runAsync('DELETE FROM products WHERE id = ?', [id]);
+}
+
+//Configuraciones
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM settings WHERE key = ?',
+    [key]
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync(
+    `INSERT INTO settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}
+
+//Backup/Restaura toda la DB
+export type BackupData = {
+  version: 1;
+  exportedAt: string;
+  categories: any[];
+  subcategories: any[];
+  products: any[];
+  lists: any[];
+  list_items: any[];
+  list_category_state: any[];
+  list_subcategory_state: any[];
+};
+
+export async function exportAllData(): Promise<BackupData> {
+  const db = getDatabase();
+  const [categories, subcategories, products, lists, list_items, list_category_state, list_subcategory_state] =
+    await Promise.all([
+      db.getAllAsync('SELECT * FROM categories'),
+      db.getAllAsync('SELECT * FROM subcategories'),
+      db.getAllAsync('SELECT * FROM products'),
+      db.getAllAsync('SELECT * FROM lists'),
+      db.getAllAsync('SELECT * FROM list_items'),
+      db.getAllAsync('SELECT * FROM list_category_state'),
+      db.getAllAsync('SELECT * FROM list_subcategory_state'),
+    ]);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    categories,
+    subcategories,
+    products,
+    lists,
+    list_items,
+    list_category_state,
+    list_subcategory_state,
+  };
+}
+
+export async function importAllData(data: BackupData): Promise<void> {
+  const db = getDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.execAsync(`
+      DELETE FROM list_subcategory_state;
+      DELETE FROM list_category_state;
+      DELETE FROM list_items;
+      DELETE FROM lists;
+      DELETE FROM products;
+      DELETE FROM subcategories;
+      DELETE FROM categories;
+    `);
+
+    for (const c of data.categories) {
+      await db.runAsync('INSERT INTO categories (id, name, color, sort_order) VALUES (?, ?, ?, ?)', [
+        c.id, c.name, c.color, c.sort_order,
+      ]);
+    }
+    for (const sc of data.subcategories) {
+      await db.runAsync(
+        'INSERT INTO subcategories (id, category_id, name, sort_order) VALUES (?, ?, ?, ?)',
+        [sc.id, sc.category_id, sc.name, sc.sort_order]
+      );
+    }
+    for (const p of data.products) {
+      await db.runAsync(
+        'INSERT INTO products (id, subcategory_id, name, sort_order) VALUES (?, ?, ?, ?)',
+        [p.id, p.subcategory_id, p.name, p.sort_order]
+      );
+    }
+    for (const l of data.lists) {
+      await db.runAsync('INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)', [
+        l.id, l.name, l.created_at,
+      ]);
+    }
+    for (const li of data.list_items) {
+      await db.runAsync(
+        'INSERT INTO list_items (id, list_id, product_id, quantity, is_checked) VALUES (?, ?, ?, ?, ?)',
+        [li.id, li.list_id, li.product_id, li.quantity, li.is_checked]
+      );
+    }
+    for (const cs of data.list_category_state) {
+      await db.runAsync(
+        'INSERT INTO list_category_state (list_id, category_id, is_collapsed) VALUES (?, ?, ?)',
+        [cs.list_id, cs.category_id, cs.is_collapsed]
+      );
+    }
+    for (const ss of data.list_subcategory_state) {
+      await db.runAsync(
+        'INSERT INTO list_subcategory_state (list_id, subcategory_id, is_collapsed) VALUES (?, ?, ?)',
+        [ss.list_id, ss.subcategory_id, ss.is_collapsed]
+      );
+    }
+  });
 }

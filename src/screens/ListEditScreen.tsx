@@ -2,17 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import { getListTree, updateListItemQuantity, CategoryNode } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
 
 type Props = { route: any; navigation: any };
 
 export default function ListEditScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
   const { listId, listName } = route.params;
-  //tree copia la estructura de la DB para refrescarse cada vez que se vea la pantalla
   const [tree, setTree] = useState<CategoryNode[]>([]);
-  //pendingQuantities hace un almacenamiento local que solo se manifestara
-  //cuando se presione Guardar, ningun otro boton lo hara. Cancelar lo anula.
   const [pendingQuantities, setPendingQuantities] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
@@ -43,12 +42,11 @@ export default function ListEditScreen({ route, navigation }: Props) {
   }
 
   function handleCancelar() {
-    //Cancelar retrocede y anula cualquier posible cambio a la DB
     navigation.goBack();
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancelar}>
           <Text style={styles.headerBtn}>Cancelar</Text>
@@ -104,7 +102,7 @@ export default function ListEditScreen({ route, navigation }: Props) {
           </View>
         ))}
         {tree.length === 0 && (
-          <Text style={styles.emptyHint}>Sin productos aún. Toca "Añadir producto".</Text>
+          <Text style={[styles.emptyHint, { color: colors.text }]}>Sin productos aún. Toca "Añadir producto".</Text>
         )}
       </ScrollView>
     </SafeAreaView>

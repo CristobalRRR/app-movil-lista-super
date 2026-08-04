@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import {
   getCatalogTree,
   addProductToList,
@@ -13,11 +14,10 @@ import AddProductModal from '../components/AddProductModal';
 type Props = { route: any; navigation: any };
 
 export default function AddProductToListScreen({ route, navigation }: Props) {
+  const { colors } = useTheme();
   const { listId, listName } = route.params;
   const [tree, setTree] = useState<CatalogCategory[]>([]);
-  //Snapshot de lo que estaba en la lista segun la DB cuando se entra a la pantalla
   const [committedInList, setCommittedInList] = useState<Set<number>>(new Set());
-  //DB solo se toca cuando se apreta Guardar
   const [overrides, setOverrides] = useState<Map<number, boolean>>(new Map());
   const [addModalVisible, setAddModalVisible] = useState(false);
 
@@ -83,12 +83,11 @@ export default function AddProductToListScreen({ route, navigation }: Props) {
   }
 
   function handleCancelar() {
-    //Cancelar no toca la DB y retrocede
     navigation.goBack();
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleCancelar}>
           <Text style={styles.headerBtn}>Cancelar</Text>
