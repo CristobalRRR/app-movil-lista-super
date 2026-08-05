@@ -11,6 +11,7 @@ import {
   setCategoryChecked,
   setCategoryCollapsed,
   setSubcategoryCollapsed,
+  setAllItemsChecked,
   CategoryNode,
 } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
@@ -100,6 +101,27 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     reload();
   }
 
+  const allChecked = !isEmpty && tree.every((cat) => cat.is_checked);
+
+  function confirmMarkAll() {
+    Alert.alert(
+      allChecked ? '¿Desmarcar todo?' : '¿Marcar todo?',
+      allChecked
+        ? '¿Seguro que quieres desmarcar todos los productos de la lista?'
+        : '¿Seguro que quieres marcar todos los productos de la lista como comprados?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Continuar',
+          onPress: async () => {
+            await setAllItemsChecked(listId!, !allChecked);
+            reload();
+          },
+        },
+      ]
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -118,6 +140,14 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {!isEmpty && (
+        <TouchableOpacity style={styles.markAllRow} onPress={confirmMarkAll}>
+          <Text style={[styles.markAllText, { color: colors.text }]}>
+            {allChecked ? 'Desmarcar todo' : 'Marcar todo'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {!listId ? (
         <View style={styles.center}>
@@ -216,6 +246,8 @@ const styles = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 22, fontWeight: 'bold', color: '#000' },
   editBtn: { backgroundColor: '#5AC8FA', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   editBtnText: { fontWeight: 'bold' },
+  markAllRow: { paddingHorizontal: 12, paddingVertical: 6, alignSelf: 'flex-start' },
+  markAllText: { fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   emptyText: { color: '#fff', fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
   row: {

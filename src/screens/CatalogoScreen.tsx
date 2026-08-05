@@ -7,18 +7,21 @@ import {
   getCatalogTree,
   renameCategory,
   renameSubcategory,
-  renameProduct,
   getCategoryImpact,
   getSubcategoryImpact,
   getListsContainingProduct,
   deleteCategory,
   deleteSubcategory,
   deleteProduct,
+  moveCategory,
+  moveSubcategory,
+  moveProduct,
   CatalogCategory,
 } from '../db/queries';
 import { lighten, SUBCATEGORY_TINT, PRODUCT_TINT } from '../utils/color';
 import AddProductModal from '../components/AddProductModal';
 import EditCategoryModal from '../components/EditCategoryModal';
+import EditProductModal from '../components/EditProductModal';
 import PromptModal from '../components/PromptModal';
 
 type Props = { navigation: any };
@@ -26,7 +29,7 @@ type Props = { navigation: any };
 type EditTarget =
   | { level: 'category'; id: number; name: string; color: string }
   | { level: 'subcategory'; id: number; name: string }
-  | { level: 'product'; id: number; name: string }
+  | { level: 'product'; id: number; name: string; categoryId: number; subcategoryId: number }
   | null;
 
 export default function CatalogoScreen({ navigation }: Props) {
@@ -58,6 +61,22 @@ export default function CatalogoScreen({ navigation }: Props) {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  //Reordenar
+  async function handleMoveCategory(id: number, direction: 'up' | 'down') {
+    await moveCategory(id, direction);
+    load();
+  }
+
+  async function handleMoveSubcategory(id: number, categoryId: number, direction: 'up' | 'down') {
+    await moveSubcategory(id, categoryId, direction);
+    load();
+  }
+
+  async function handleMoveProduct(id: number, subcategoryId: number, direction: 'up' | 'down') {
+    await moveProduct(id, subcategoryId, direction);
+    load();
   }
 
   //Renombrar
@@ -94,23 +113,7 @@ export default function CatalogoScreen({ navigation }: Props) {
     ]);
   }
 
-  function confirmRenameProduct(name: string) {
-    if (editTarget?.level !== 'product') return;
-    const { id } = editTarget;
-    Alert.alert('Confirmar cambios', `¿Guardar cambios en "${editTarget.name}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Guardar',
-        onPress: async () => {
-          await renameProduct(id, name);
-          setEditTarget(null);
-          load();
-        },
-      },
-    ]);
-  }
-
-  //Eliminar, con advertencia de cascada
+  //Eliminar
 
   async function handleDeleteCategory(id: number, name: string) {
     const impact = await getCategoryImpact(id);
@@ -191,7 +194,7 @@ export default function CatalogoScreen({ navigation }: Props) {
       )}
 
       <ScrollView>
-        {tree.map((cat) => {
+        {tree.map((cat, catIndex) => {
           const catCollapsed = collapsedCats.has(cat.id);
           return (
             <View key={cat.id}>
@@ -200,6 +203,18 @@ export default function CatalogoScreen({ navigation }: Props) {
                 <View style={styles.rowControls}>
                   {editMode && (
                     <>
+                      <TouchableOpacity
+                        disabled={catIndex === 0}
+                        onPress={() => handleMoveCategory(cat.id, 'up')}
+                      >
+                        <Text style={[styles.icon, catIndex === 0 && styles.iconDisabled]}>↑</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        disabled={catIndex === tree.length - 1}
+                        onPress={() => handleMoveCategory(cat.id, 'down')}
+                      >
+                        <Text style={[styles.icon, catIndex === tree.length - 1 && styles.iconDisabled]}>↓</Text>
+                      </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() =>
                           setEditTarget({ level: 'category', id: cat.id, name: cat.name, color: cat.color })
@@ -219,7 +234,7 @@ export default function CatalogoScreen({ navigation }: Props) {
               </View>
 
               {!catCollapsed &&
-                cat.subcategories.map((sub) => {
+                cat.subcategories.map((sub, subIndex) => {
                   const subCollapsed = collapsedSubs.has(sub.id);
                   return (
                     <View key={sub.id}>
@@ -228,6 +243,25 @@ export default function CatalogoScreen({ navigation }: Props) {
                         <View style={styles.rowControls}>
                           {editMode && (
                             <>
+                              <TouchableOpacity
+                                disabled={subIndex === 0}
+                                onPress={() => handleMoveSubcategory(sub.id, cat.id, 'up')}
+                              >
+                                <Text style={[styles.icon, subIndex === 0 && styles.iconDisabled]}>↑</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                disabled={subIndex === cat.subcategories.length - 1}
+                                onPress={() => handleMoveSubcategory(sub.id, cat.id, 'down')}
+                              >
+                                <Text
+                                  style={[
+                                    styles.icon,
+                                    subIndex === cat.subcategories.length - 1 && styles.iconDisabled,
+                                  ]}
+                                >
+                                  ↓
+                                </Text>
+                              </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() =>
                                   setEditTarget({ level: 'subcategory', id: sub.id, name: sub.name })
@@ -247,7 +281,7 @@ export default function CatalogoScreen({ navigation }: Props) {
                       </View>
 
                       {!subCollapsed &&
-                        sub.products.map((prod) => (
+                        sub.products.map((prod, prodIndex) => (
                           <View
                             key={prod.id}
                             style={[styles.row, { backgroundColor: lighten(cat.color, PRODUCT_TINT) }]}
@@ -256,8 +290,33 @@ export default function CatalogoScreen({ navigation }: Props) {
                             {editMode && (
                               <View style={styles.rowControls}>
                                 <TouchableOpacity
+                                  disabled={prodIndex === 0}
+                                  onPress={() => handleMoveProduct(prod.id, sub.id, 'up')}
+                                >
+                                  <Text style={[styles.icon, prodIndex === 0 && styles.iconDisabled]}>↑</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  disabled={prodIndex === sub.products.length - 1}
+                                  onPress={() => handleMoveProduct(prod.id, sub.id, 'down')}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.icon,
+                                      prodIndex === sub.products.length - 1 && styles.iconDisabled,
+                                    ]}
+                                  >
+                                    ↓
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
                                   onPress={() =>
-                                    setEditTarget({ level: 'product', id: prod.id, name: prod.name })
+                                    setEditTarget({
+                                      level: 'product',
+                                      id: prod.id,
+                                      name: prod.name,
+                                      categoryId: cat.id,
+                                      subcategoryId: sub.id,
+                                    })
                                   }
                                 >
                                   <Text style={styles.icon}>✎</Text>
@@ -303,13 +362,20 @@ export default function CatalogoScreen({ navigation }: Props) {
         onCancel={() => setEditTarget(null)}
         onConfirm={confirmRenameSubcategory}
       />
-      <PromptModal
-        visible={editTarget?.level === 'product'}
-        title="Editar producto"
-        initialValue={editTarget?.level === 'product' ? editTarget.name : ''}
-        onCancel={() => setEditTarget(null)}
-        onConfirm={confirmRenameProduct}
-      />
+      {editTarget?.level === 'product' && (
+        <EditProductModal
+          visible
+          productId={editTarget.id}
+          initialName={editTarget.name}
+          initialCategoryId={editTarget.categoryId}
+          initialSubcategoryId={editTarget.subcategoryId}
+          onCancel={() => setEditTarget(null)}
+          onSaved={() => {
+            setEditTarget(null);
+            load();
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -339,8 +405,9 @@ const styles = StyleSheet.create({
     borderColor: '#00000033',
   },
   rowText: { fontSize: 16, fontWeight: '600', color: '#000', flex: 1 },
-  rowControls: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  icon: { fontSize: 18 },
+  rowControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  icon: { fontSize: 17 },
+  iconDisabled: { opacity: 0.25 },
   arrow: { fontSize: 16 },
   emptyHint: { color: '#fff', textAlign: 'center', marginTop: 30, fontStyle: 'italic' },
 });

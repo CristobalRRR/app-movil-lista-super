@@ -55,7 +55,7 @@ export async function deleteList(listId: number): Promise<void> {
   await db.runAsync('DELETE FROM lists WHERE id = ?', [listId]);
 }
 
-//Arbol de listas
+//Arbol de lista
 
 export async function getListTree(listId: number): Promise<CategoryNode[]> {
   const db = getDatabase();
@@ -413,7 +413,94 @@ export async function renameProduct(id: number, name: string): Promise<void> {
   await db.runAsync('UPDATE products SET name = ? WHERE id = ?', [name, id]);
 }
 
-//CRUD Catalogo: Eliminar, con informacion del impacto de cascada
+export async function moveProductToSubcategory(id: number, subcategoryId: number): Promise<void> {
+  const db = getDatabase();
+  const maxOrder = await db.getFirstAsync<{ m: number }>(
+    'SELECT COALESCE(MAX(sort_order), -1) as m FROM products WHERE subcategory_id = ?',
+    [subcategoryId]
+  );
+  await db.runAsync('UPDATE products SET subcategory_id = ?, sort_order = ? WHERE id = ?', [
+    subcategoryId,
+    (maxOrder?.m ?? -1) + 1,
+    id,
+  ]);
+}
+
+export type DuplicateCategory = { id: number; name: string; color: string };
+export type DuplicateSubcategory = { id: number; name: string };
+
+export async function findCategoryByName(name: string): Promise<DuplicateCategory | null> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<DuplicateCategory>(
+    'SELECT id, name, color FROM categories WHERE UPPER(TRIM(name)) = UPPER(TRIM(?)) LIMIT 1',
+    [name]
+  );
+  return row ?? null;
+}
+
+export async function findSubcategoryByName(
+  categoryId: number,
+  name: string
+): Promise<DuplicateSubcategory | null> {
+  const db = getDatabase();
+  const row = await db.getFirstAsync<DuplicateSubcategory>(
+    'SELECT id, name FROM subcategories WHERE category_id = ? AND UPPER(TRIM(name)) = UPPER(TRIM(?)) LIMIT 1',
+    [categoryId, name]
+  );
+  return row ?? null;
+}
+
+//Reordenar en lista
+
+async function swapOrder(
+  table: 'categories' | 'subcategories' | 'products',
+  scopeColumn: string | null,
+  scopeValue: number | null,
+  id: number,
+  direction: 'up' | 'down'
+): Promise<void> {
+  const db = getDatabase();
+  const scopeClause = scopeColumn ? `WHERE ${scopeColumn} = ?` : '';
+  const scopeParams = scopeColumn ? [scopeValue] : [];
+
+  const siblings = await db.getAllAsync<{ id: number; sort_order: number }>(
+    `SELECT id, sort_order FROM ${table} ${scopeClause} ORDER BY sort_order ASC`,
+    scopeParams as any[]
+  );
+  const index = siblings.findIndex((s) => s.id === id);
+  if (index === -1) return;
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= siblings.length) return; // already at an edge
+
+  const current = siblings[index];
+  const neighbor = siblings[swapIndex];
+  await db.runAsync(`UPDATE ${table} SET sort_order = ? WHERE id = ?`, [neighbor.sort_order, current.id]);
+  await db.runAsync(`UPDATE ${table} SET sort_order = ? WHERE id = ?`, [current.sort_order, neighbor.id]);
+}
+
+export async function moveCategory(id: number, direction: 'up' | 'down'): Promise<void> {
+  await swapOrder('categories', null, null, id, direction);
+}
+
+export async function moveSubcategory(id: number, categoryId: number, direction: 'up' | 'down'): Promise<void> {
+  await swapOrder('subcategories', 'category_id', categoryId, id, direction);
+}
+
+export async function moveProduct(id: number, subcategoryId: number, direction: 'up' | 'down'): Promise<void> {
+  await swapOrder('products', 'subcategory_id', subcategoryId, id, direction);
+}
+
+//Chequear/deschequear todos los elementos
+
+export async function setAllItemsChecked(listId: number, checked: boolean): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE list_items SET is_checked = ? WHERE list_id = ?', [
+    checked ? 1 : 0,
+    listId,
+  ]);
+}
+
+//CRUD Catalogo: Eliminar
 
 export type CategoryImpact = { subcategoryCount: number; productCount: number; listNames: string[] };
 export type SubcategoryImpact = { productCount: number; listNames: string[] };
@@ -496,7 +583,8 @@ export async function setSetting(key: string, value: string): Promise<void> {
   );
 }
 
-//Backup/Restaura toda la DB
+//Copias de seguridad
+
 export type BackupData = {
   version: 1;
   exportedAt: string;

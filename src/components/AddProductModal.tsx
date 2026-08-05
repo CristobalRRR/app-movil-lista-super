@@ -7,19 +7,21 @@ import {
   createSubcategory,
   createProduct,
   findProductByName,
+  findCategoryByName,
+  findSubcategoryByName,
   CategoryOption,
   SubcategoryOption,
 } from '../db/queries';
 import { CATEGORY_COLOR_PALETTE } from '../utils/color';
- 
+
 type Props = {
   visible: boolean;
   onCancel: () => void;
   onCreated: (productId: number) => void;
 };
- 
+
 type Step = 'form' | 'newCategory' | 'newSubcategory';
- 
+
 export default function AddProductModal({ visible, onCancel, onCreated }: Props) {
   const [step, setStep] = useState<Step>('form');
   const [name, setName] = useState('');
@@ -29,11 +31,11 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
   const [selectedSubcategory, setSelectedSubcategory] = useState<SubcategoryOption | null>(null);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const [subcategoryPickerOpen, setSubcategoryPickerOpen] = useState(false);
- 
+
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState(CATEGORY_COLOR_PALETTE[0]);
   const [newSubName, setNewSubName] = useState('');
- 
+
   useEffect(() => {
     if (visible) {
       setStep('form');
@@ -43,16 +45,15 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
       getCategoryOptions().then(setCategories);
     }
   }, [visible]);
- 
+
   useEffect(() => {
     if (selectedCategory) {
       getSubcategoryOptions(selectedCategory.id).then(setSubcategories);
       setSelectedSubcategory(null);
     }
   }, [selectedCategory]);
- 
-  async function handleSaveCategory() {
-    if (!newCatName.trim()) return;
+
+  async function doCreateCategory() {
     const id = await createCategory(newCatName.trim(), newCatColor);
     const updated = await getCategoryOptions();
     setCategories(updated);
@@ -60,9 +61,26 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
     setNewCatName('');
     setStep('form');
   }
- 
-  async function handleSaveSubcategory() {
-    if (!newSubName.trim() || !selectedCategory) return;
+
+  async function handleSaveCategory() {
+    if (!newCatName.trim()) return;
+    const duplicate = await findCategoryByName(newCatName.trim());
+    if (duplicate) {
+      Alert.alert(
+        'Categoría existente',
+        `Ya existe una categoría llamada "${duplicate.name}", ¿crear otra igual?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Crear igual', onPress: doCreateCategory },
+        ]
+      );
+      return;
+    }
+    await doCreateCategory();
+  }
+
+  async function doCreateSubcategory() {
+    if (!selectedCategory) return;
     const id = await createSubcategory(selectedCategory.id, newSubName.trim());
     const updated = await getSubcategoryOptions(selectedCategory.id);
     setSubcategories(updated);
@@ -70,13 +88,30 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
     setNewSubName('');
     setStep('form');
   }
- 
+
+  async function handleSaveSubcategory() {
+    if (!newSubName.trim() || !selectedCategory) return;
+    const duplicate = await findSubcategoryByName(selectedCategory.id, newSubName.trim());
+    if (duplicate) {
+      Alert.alert(
+        'Subcategoría existente',
+        `"${selectedCategory.name}" ya tiene una subcategoría llamada "${duplicate.name}", ¿crear otra igual?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Crear igual', onPress: doCreateSubcategory },
+        ]
+      );
+      return;
+    }
+    await doCreateSubcategory();
+  }
+
   async function doCreateProduct() {
     if (!name.trim() || !selectedSubcategory) return;
     const id = await createProduct(selectedSubcategory.id, name.trim());
     onCreated(id);
   }
- 
+
   async function handleSaveProduct() {
     if (!name.trim() || !selectedSubcategory) return;
     const duplicate = await findProductByName(name.trim());
@@ -93,7 +128,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
     }
     await doCreateProduct();
   }
- 
+
   if (step === 'newCategory') {
     return (
       <Modal visible={visible} transparent animationType="fade">
@@ -135,7 +170,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
       </Modal>
     );
   }
- 
+
   if (step === 'newSubcategory') {
     return (
       <Modal visible={visible} transparent animationType="fade">
@@ -163,13 +198,13 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
       </Modal>
     );
   }
- 
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <Text style={styles.title}>Añadir producto a catálogo</Text>
- 
+
           <TextInput
             style={styles.input}
             value={name}
@@ -177,7 +212,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
             placeholder="Nombre"
             placeholderTextColor="#888"
           />
- 
+
           <TouchableOpacity
             style={styles.dropdownHeader}
             onPress={() => setCategoryPickerOpen(!categoryPickerOpen)}
@@ -206,7 +241,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
               </TouchableOpacity>
             </ScrollView>
           )}
- 
+
           {selectedCategory && (
             <>
               <TouchableOpacity
@@ -239,7 +274,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
               )}
             </>
           )}
- 
+
           <View style={styles.row}>
             <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={onCancel}>
               <Text style={styles.btnText}>Cancelar</Text>
@@ -257,7 +292,7 @@ export default function AddProductModal({ visible, onCancel, onCreated }: Props)
     </Modal>
   );
 }
- 
+
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: '#00000099', alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: '#2a2a2a', borderRadius: 10, padding: 20, width: '88%', maxHeight: '85%' },
