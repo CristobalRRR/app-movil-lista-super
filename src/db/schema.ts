@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS list_items (
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   quantity INTEGER NOT NULL DEFAULT 1,
   is_checked INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER,
   UNIQUE(list_id, product_id)
 );
 
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS list_category_state (
   list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
   is_collapsed INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER,
   PRIMARY KEY (list_id, category_id)
 );
 
@@ -48,6 +50,7 @@ CREATE TABLE IF NOT EXISTS list_subcategory_state (
   list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
   subcategory_id INTEGER NOT NULL REFERENCES subcategories(id) ON DELETE CASCADE,
   is_collapsed INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER,
   PRIMARY KEY (list_id, subcategory_id)
 );
 

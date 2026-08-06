@@ -64,6 +64,7 @@ export default function CatalogoScreen({ navigation }: Props) {
   }
 
   //Reordenar
+
   async function handleMoveCategory(id: number, direction: 'up' | 'down') {
     await moveCategory(id, direction);
     load();
@@ -124,7 +125,8 @@ export default function CatalogoScreen({ navigation }: Props) {
     if (impact.listNames.length > 0) {
       msg += `\n\nSe eliminará de estas listas: ${impact.listNames.join(', ')}.`;
     }
-    Alert.alert(`¿Borrar "${name}"?`, msg || 'Esta acción no se puede deshacer.', [
+    msg += `\n\nEsta acción NO se puede deshacer.`;
+    Alert.alert(`¿Borrar "${name}"?`, msg, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Borrar',
@@ -143,7 +145,8 @@ export default function CatalogoScreen({ navigation }: Props) {
     if (impact.listNames.length > 0) {
       msg += `\n\nSe eliminará de estas listas: ${impact.listNames.join(', ')}.`;
     }
-    Alert.alert(`¿Borrar "${name}"?`, msg || 'Esta acción no se puede deshacer.', [
+    msg += `\n\nEsta acción NO se puede deshacer.`;
+    Alert.alert(`¿Borrar "${name}"?`, msg, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Borrar',
@@ -158,10 +161,9 @@ export default function CatalogoScreen({ navigation }: Props) {
 
   async function handleDeleteProduct(id: number, name: string) {
     const lists = await getListsContainingProduct(id);
-    const msg =
-      lists.length > 0
-        ? `Se eliminará de estas listas: ${lists.map((l) => l.name).join(', ')}.`
-        : 'Esta acción no se puede deshacer.';
+    let msg =
+      lists.length > 0 ? `Se eliminará de estas listas: ${lists.map((l) => l.name).join(', ')}.` : '';
+    msg += `\n\nEsta acción NO se puede deshacer.`;
     Alert.alert(`¿Borrar "${name}"?`, msg, [
       { text: 'Cancelar', style: 'cancel' },
       {

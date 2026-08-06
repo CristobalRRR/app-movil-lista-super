@@ -2,7 +2,7 @@
   "expo": {
     "name": "app-movil-lista-super",
     "slug": "app-movil-lista-super",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,13 +21,19 @@
         "backgroundColor": "#B5807A"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cristobalrrr.appmovillistasuper"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4952c123-c028-4c1b-80ee-43f8ccb3a2e4"
+      }
+    }
   }
 }

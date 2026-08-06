@@ -55,7 +55,7 @@ export async function deleteList(listId: number): Promise<void> {
   await db.runAsync('DELETE FROM lists WHERE id = ?', [listId]);
 }
 
-//Arbol de lista
+//Arbol de listas
 
 export async function getListTree(listId: number): Promise<CategoryNode[]> {
   const db = getDatabase();
@@ -64,8 +64,10 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
     category_id: number;
     category_name: string;
     category_color: string;
+    category_collapsed_raw: number; // -1 = not set, use default
     subcategory_id: number;
     subcategory_name: string;
+    subcategory_collapsed_raw: number;
     product_id: number;
     product_name: string;
     quantity: number;
@@ -73,28 +75,24 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
   }>(
     `SELECT
        c.id as category_id, c.name as category_name, c.color as category_color,
+       COALESCE(lcs.is_collapsed, -1) as category_collapsed_raw,
        sc.id as subcategory_id, sc.name as subcategory_name,
+       COALESCE(lss.is_collapsed, -1) as subcategory_collapsed_raw,
        p.id as product_id, p.name as product_name,
        li.quantity as quantity, li.is_checked as is_checked
      FROM list_items li
      JOIN products p ON p.id = li.product_id
      JOIN subcategories sc ON sc.id = p.subcategory_id
      JOIN categories c ON c.id = sc.category_id
+     LEFT JOIN list_category_state lcs ON lcs.list_id = li.list_id AND lcs.category_id = c.id
+     LEFT JOIN list_subcategory_state lss ON lss.list_id = li.list_id AND lss.subcategory_id = sc.id
      WHERE li.list_id = ?
-     ORDER BY c.sort_order, sc.sort_order, p.sort_order`,
+     ORDER BY
+       COALESCE(lcs.sort_order, c.sort_order),
+       COALESCE(lss.sort_order, sc.sort_order),
+       COALESCE(li.sort_order, p.sort_order)`,
     [listId]
   );
-
-  const collapsedCats = await db.getAllAsync<{ category_id: number; is_collapsed: number }>(
-    'SELECT category_id, is_collapsed FROM list_category_state WHERE list_id = ?',
-    [listId]
-  );
-  const collapsedSubs = await db.getAllAsync<{ subcategory_id: number; is_collapsed: number }>(
-    'SELECT subcategory_id, is_collapsed FROM list_subcategory_state WHERE list_id = ?',
-    [listId]
-  );
-  const collapsedCatMap = new Map(collapsedCats.map((r) => [r.category_id, !!r.is_collapsed]));
-  const collapsedSubMap = new Map(collapsedSubs.map((r) => [r.subcategory_id, !!r.is_collapsed]));
 
   const categoryMap = new Map<number, CategoryNode>();
 
@@ -105,7 +103,7 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
         name: row.category_name,
         color: row.category_color,
         is_checked: false,
-        is_collapsed: collapsedCatMap.get(row.category_id) ?? false,
+        is_collapsed: row.category_collapsed_raw === -1 ? false : !!row.category_collapsed_raw,
         subcategories: [],
       });
     }
@@ -117,7 +115,7 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
         id: row.subcategory_id,
         name: row.subcategory_name,
         is_checked: false,
-        is_collapsed: collapsedSubMap.get(row.subcategory_id) ?? false,
+        is_collapsed: row.subcategory_collapsed_raw === -1 ? false : !!row.subcategory_collapsed_raw,
         products: [],
       };
       category.subcategories.push(subcategory);
@@ -132,13 +130,20 @@ export async function getListTree(listId: number): Promise<CategoryNode[]> {
   }
 
   const categories = Array.from(categoryMap.values());
+  const explicitCatCollapse = new Set(
+    rows.filter((r) => r.category_collapsed_raw !== -1).map((r) => r.category_id)
+  );
+  const explicitSubCollapse = new Set(
+    rows.filter((r) => r.subcategory_collapsed_raw !== -1).map((r) => r.subcategory_id)
+  );
+
   for (const category of categories) {
     for (const sub of category.subcategories) {
       sub.is_checked = sub.products.every((p) => p.is_checked);
-      if (!collapsedSubMap.has(sub.id)) sub.is_collapsed = sub.is_checked;
+      if (!explicitSubCollapse.has(sub.id)) sub.is_collapsed = sub.is_checked;
     }
     category.is_checked = category.subcategories.every((s) => s.is_checked);
-    if (!collapsedCatMap.has(category.id)) category.is_collapsed = category.is_checked;
+    if (!explicitCatCollapse.has(category.id)) category.is_collapsed = category.is_checked;
   }
 
   return categories;
@@ -216,6 +221,111 @@ export async function setSubcategoryCollapsed(
      ON CONFLICT(list_id, subcategory_id) DO UPDATE SET is_collapsed = excluded.is_collapsed`,
     [listId, subcategoryId, collapsed ? 1 : 0]
   );
+}
+
+//Reordernar elementos de cada lista individualmente
+
+function computeSwapTarget<T extends { id: number }>(
+  siblings: T[],
+  id: number,
+  direction: 'up' | 'down'
+): { current: T; neighbor: T } | null {
+  const index = siblings.findIndex((s) => s.id === id);
+  if (index === -1) return null;
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= siblings.length) return null;
+  return { current: siblings[index], neighbor: siblings[swapIndex] };
+}
+
+export async function moveListCategory(
+  listId: number,
+  categoryId: number,
+  direction: 'up' | 'down'
+): Promise<void> {
+  const db = getDatabase();
+  const siblings = await db.getAllAsync<{ id: number; ord: number }>(
+    `SELECT DISTINCT c.id as id, COALESCE(lcs.sort_order, c.sort_order) as ord
+     FROM list_items li
+     JOIN products p ON p.id = li.product_id
+     JOIN subcategories sc ON sc.id = p.subcategory_id
+     JOIN categories c ON c.id = sc.category_id
+     LEFT JOIN list_category_state lcs ON lcs.list_id = li.list_id AND lcs.category_id = c.id
+     WHERE li.list_id = ?
+     ORDER BY ord ASC`,
+    [listId]
+  );
+  const swap = computeSwapTarget(siblings, categoryId, direction);
+  if (!swap) return;
+  await db.runAsync(
+    `INSERT INTO list_category_state (list_id, category_id, sort_order) VALUES (?, ?, ?)
+     ON CONFLICT(list_id, category_id) DO UPDATE SET sort_order = excluded.sort_order`,
+    [listId, swap.current.id, swap.neighbor.ord]
+  );
+  await db.runAsync(
+    `INSERT INTO list_category_state (list_id, category_id, sort_order) VALUES (?, ?, ?)
+     ON CONFLICT(list_id, category_id) DO UPDATE SET sort_order = excluded.sort_order`,
+    [listId, swap.neighbor.id, swap.current.ord]
+  );
+}
+
+export async function moveListSubcategory(
+  listId: number,
+  categoryId: number,
+  subcategoryId: number,
+  direction: 'up' | 'down'
+): Promise<void> {
+  const db = getDatabase();
+  const siblings = await db.getAllAsync<{ id: number; ord: number }>(
+    `SELECT DISTINCT sc.id as id, COALESCE(lss.sort_order, sc.sort_order) as ord
+     FROM list_items li
+     JOIN products p ON p.id = li.product_id
+     JOIN subcategories sc ON sc.id = p.subcategory_id
+     LEFT JOIN list_subcategory_state lss ON lss.list_id = li.list_id AND lss.subcategory_id = sc.id
+     WHERE li.list_id = ? AND sc.category_id = ?
+     ORDER BY ord ASC`,
+    [listId, categoryId]
+  );
+  const swap = computeSwapTarget(siblings, subcategoryId, direction);
+  if (!swap) return;
+  await db.runAsync(
+    `INSERT INTO list_subcategory_state (list_id, subcategory_id, sort_order) VALUES (?, ?, ?)
+     ON CONFLICT(list_id, subcategory_id) DO UPDATE SET sort_order = excluded.sort_order`,
+    [listId, swap.current.id, swap.neighbor.ord]
+  );
+  await db.runAsync(
+    `INSERT INTO list_subcategory_state (list_id, subcategory_id, sort_order) VALUES (?, ?, ?)
+     ON CONFLICT(list_id, subcategory_id) DO UPDATE SET sort_order = excluded.sort_order`,
+    [listId, swap.neighbor.id, swap.current.ord]
+  );
+}
+
+export async function moveListProduct(
+  listId: number,
+  subcategoryId: number,
+  productId: number,
+  direction: 'up' | 'down'
+): Promise<void> {
+  const db = getDatabase();
+  const siblings = await db.getAllAsync<{ id: number; ord: number }>(
+    `SELECT p.id as id, COALESCE(li.sort_order, p.sort_order) as ord
+     FROM list_items li
+     JOIN products p ON p.id = li.product_id
+     WHERE li.list_id = ? AND p.subcategory_id = ?
+     ORDER BY ord ASC`,
+    [listId, subcategoryId]
+  );
+  const swap = computeSwapTarget(siblings, productId, direction);
+  if (!swap) return;
+  await db.runAsync('UPDATE list_items SET sort_order = ? WHERE list_id = ? AND product_id = ?', [
+    swap.neighbor.ord,
+    listId,
+    swap.current.id,
+  ]);
+  await db.runAsync('UPDATE list_items SET sort_order = ? WHERE list_id = ? AND product_id = ?', [
+    swap.current.ord,
+    listId,
+    swap.neighbor.id,
+  ]);
 }
 
 //Catalogo
@@ -426,6 +536,7 @@ export async function moveProductToSubcategory(id: number, subcategoryId: number
   ]);
 }
 
+//Detectar duplicados
 export type DuplicateCategory = { id: number; name: string; color: string };
 export type DuplicateSubcategory = { id: number; name: string };
 
@@ -450,7 +561,7 @@ export async function findSubcategoryByName(
   return row ?? null;
 }
 
-//Reordenar en lista
+//Reordenar entre elementos
 
 async function swapOrder(
   table: 'categories' | 'subcategories' | 'products',
@@ -490,7 +601,7 @@ export async function moveProduct(id: number, subcategoryId: number, direction: 
   await swapOrder('products', 'subcategory_id', subcategoryId, id, direction);
 }
 
-//Chequear/deschequear todos los elementos
+//Marcar/Desmarcar todo
 
 export async function setAllItemsChecked(listId: number, checked: boolean): Promise<void> {
   const db = getDatabase();
@@ -659,20 +770,20 @@ export async function importAllData(data: BackupData): Promise<void> {
     }
     for (const li of data.list_items) {
       await db.runAsync(
-        'INSERT INTO list_items (id, list_id, product_id, quantity, is_checked) VALUES (?, ?, ?, ?, ?)',
-        [li.id, li.list_id, li.product_id, li.quantity, li.is_checked]
+        'INSERT INTO list_items (id, list_id, product_id, quantity, is_checked, sort_order) VALUES (?, ?, ?, ?, ?, ?)',
+        [li.id, li.list_id, li.product_id, li.quantity, li.is_checked, li.sort_order ?? null]
       );
     }
     for (const cs of data.list_category_state) {
       await db.runAsync(
-        'INSERT INTO list_category_state (list_id, category_id, is_collapsed) VALUES (?, ?, ?)',
-        [cs.list_id, cs.category_id, cs.is_collapsed]
+        'INSERT INTO list_category_state (list_id, category_id, is_collapsed, sort_order) VALUES (?, ?, ?, ?)',
+        [cs.list_id, cs.category_id, cs.is_collapsed, cs.sort_order ?? null]
       );
     }
     for (const ss of data.list_subcategory_state) {
       await db.runAsync(
-        'INSERT INTO list_subcategory_state (list_id, subcategory_id, is_collapsed) VALUES (?, ?, ?)',
-        [ss.list_id, ss.subcategory_id, ss.is_collapsed]
+        'INSERT INTO list_subcategory_state (list_id, subcategory_id, is_collapsed, sort_order) VALUES (?, ?, ?, ?)',
+        [ss.list_id, ss.subcategory_id, ss.is_collapsed, ss.sort_order ?? null]
       );
     }
   });
